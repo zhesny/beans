@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Летающие Бобы-Хоровики</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #b33939;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', cursive, sans-serif;
+            touch-action: none;
+        }
+
+        #ui-container {
+            position: fixed;
+            top: 15px;
+            width: 100%;
+            text-align: center;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        button {
+            pointer-events: auto;
+            padding: 12px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            background-color: #2ecc71;
+            border: 3px solid #27ae60;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 5px 0 #27ae60;
+            transition: all 0.1s;
+            font-family: inherit;
+        }
+        button:active {
+            transform: translateY(5px);
+            box-shadow: 0 0 0 #27ae60;
+        }
+        button.active {
+            background-color: #e74c3c;
+            border-color: #c0392b;
+            box-shadow: 0 5px 0 #c0392b;
+        }
+
+        #floor {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 80px;
+            background: repeating-linear-gradient(90deg, #f1c40f, #f1c40f 20px, #e67e22 20px, #e67e22 40px);
+            border-top: 6px solid #8e44ad;
+            z-index: 1;
+        }
+
+        /* ОБЕРТКА БОБА */
+        .bean-wrapper {
+            position: absolute;
+            width: 80px;
+            height: 100px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.1s linear; 
+        }
+
+        /* САМ БОБ */
+        .bean {
+            position: relative;
+            width: 70px;
+            height: 90px;
+            background: radial-gradient(circle at 40% 30%, #00d2ff, #0066cc);
+            border-radius: 50% / 60% 60% 40% 40%;
+            box-shadow: inset -8px -8px 15px rgba(0,0,0,0.4), 0 5px 10px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .antenna {
+            position: absolute;
+            width: 3px; height: 25px;
+            background: #004488;
+            top: -20px;
+            border-radius: 3px;
+        }
+        .antenna::after {
+            content: '';
+            position: absolute;
+            width: 8px; height: 8px;
+            background: #00d2ff;
+            border-radius: 50%;
+            top: -4px; left: -2.5px;
+            box-shadow: 0 0 5px #00d2ff;
+        }
+        .antenna.left { left: 15px; transform: rotate(-15deg); }
+        .antenna.right { right: 15px; transform: rotate(15deg); }
+
+        .eyes {
+            display: flex; gap: 8px;
+            margin-bottom: 5px; margin-top: -5px;
+        }
+        .eye {
+            width: 18px; height: 18px;
+            background: white; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; position: relative;
+        }
+        .pupil {
+            width: 8px; height: 8px;
+            background: black; border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .eyebrows {
+            position: absolute; top: 15px; width: 100%;
+            display: flex; justify-content: center; gap: 10px;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        .brow { width: 15px; height: 4px; background: #111; border-radius: 2px; }
+        .brow.left { transform: rotate(20deg); }
+        .brow.right { transform: rotate(-20deg); }
+
+        .mouth {
+            width: 25px; height: 6px;
+            background: #111;
+            border-radius: 0 0 15px 15px;
+            transition: all 0.2s;
+            position: relative; overflow: hidden;
+        }
+        .tongue {
+            position: absolute; bottom: -5px; left: 50%;
+            transform: translateX(-50%);
+            width: 15px; height: 10px;
+            background: #ff7675; border-radius: 50%;
+            transition: bottom 0.2s;
+        }
+
+        /* СОСТОЯНИЯ */
+        .bean.state-sing .mouth { height: 25px; width: 20px; border-radius: 50%; }
+        .bean.state-sing .tongue { bottom: -10px; }
+
+        .bean.state-laugh .mouth { height: 30px; width: 45px; border-radius: 0 0 25px 25px; }
+        .bean.state-laugh .tongue { bottom: 0; }
+        .bean.state-laugh .eye { transform: scaleY(0.4); }
+
+        .bean.state-derp .pupil:nth-child(1) { transform: translate(4px, 2px); }
+        .bean.state-derp .pupil:nth-child(2) { transform: translate(-4px, -2px); }
+        .bean.state-derp .mouth { width: 15px; height: 15px; border-radius: 50%; }
+
+        .bean.state-angry .eyebrows { opacity: 1; }
+        .bean.state-angry .mouth { height: 10px; width: 20px; border-radius: 15px 15px 0 0; }
+        .bean.state-angry .tongue { bottom: -10px; }
+
+        .speech-bubble {
+            position: absolute; top: -40px;
+            background: white; padding: 5px 10px;
+            border-radius: 15px; font-size: 14px;
+            font-weight: bold; color: #333;
+            white-space: nowrap; opacity: 0; transform: scale(0);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .speech-bubble::after {
+            content: ''; position: absolute; bottom: -8px; left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px 8px 0; border-style: solid;
+            border-color: white transparent transparent transparent;
+        }
+        .speech-bubble.show { opacity: 1; transform: scale(1); }
+    </style>
+</head>
+<body>
+
+    <div id="ui-container">
+        <button id="mic-btn">🎤 Включить Микрофон</button>
+    </div>
+    <div id="floor"></div>
+
+    <script>
+        const NUM_BEANS = 7;
+        const MAX_SPEED = 3; 
+        // ФРАЗА "Я ЛЮБЛЮ ТЕБЯ" УДАЛЕНА ОТСЮДА:
+        const FUNNY_PHRASES = ["СОНЯ", "АААА", "БОБЫ!", "ХА-ХА", "ЛОЛ", "ПОМОГИТЕ", "ЧЕ?", "ЖЕСТЬ", "ОГО"];
+
+        let beans = [];
+
+        class Bean {
+            constructor(id) {
+                this.id = id;
+                this.wrapper = document.createElement('div');
+                this.wrapper.className = 'bean-wrapper';
+                this.wrapper.innerHTML = `
+                    <div class="speech-bubble"></div>
+                    <div class="bean">
+                        <div class="antenna left"></div>
+                        <div class="antenna right"></div>
+                        <div class="eyebrows">
+                            <div class="brow left"></div>
+                            <div class="brow right"></div>
+                        </div>
+                        <div class="eyes">
+                            <div class="eye"><div class="pupil"></div></div>
+                            <div class="eye"><div class="pupil"></div></div>
+                        </div>
+                        <div class="mouth"><div class="tongue"></div></div>
+                    </div>
+                `;
+                document.body.appendChild(this.wrapper);
+                
+                this.el = this.wrapper.querySelector('.bean');
+                this.bubble = this.wrapper.querySelector('.speech-bubble');
+
+                this.width = 80;
+                this.height = 100;
+                this.x = Math.random() * (window.innerWidth - this.width);
+                this.y = Math.random() * (window.innerHeight - this.height);
+                
+                this.vx = (Math.random() - 0.5) * MAX_SPEED * 2;
+                this.vy = (Math.random() - 0.5) * MAX_SPEED * 2;
+                
+                this.angle = Math.random() * 360;
+                this.angleSpeed = (Math.random() - 0.5) * 2;
+
+                this.stateTimeout = null;
+                this.isLaughing = false;
+
+                this.updatePosition();
+
+                this.wrapper.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    this.laugh();
+                });
+                
+                this.wrapper.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    this.spin();
+                });
+
+                this.startRandomActions();
+            }
+
+            updatePosition() {
+                this.wrapper.style.transform = `translate(${this.x}px, ${this.y}px) rotate(${this.angle}deg)`;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.angle += this.angleSpeed;
+
+                if (Math.abs(this.vx) < 1.5) this.vx += (Math.random() - 0.5) * 0.5;
+                if (Math.abs(this.vy) < 1.5) this.vy += (Math.random() - 0.5) * 0.5;
+
+                this.vx = Math.max(Math.min(this.vx, MAX_SPEED), -MAX_SPEED);
+                this.vy = Math.max(Math.min(this.vy, MAX_SPEED), -MAX_SPEED);
+
+                if (this.x <= 0) { this.x = 0; this.vx *= -1; }
+                if (this.x + this.width >= window.innerWidth) { this.x = window.innerWidth - this.width; this.vx *= -1; }
+                if (this.y <= 0) { this.y = 0; this.vy *= -1; }
+                if (this.y + this.height >= window.innerHeight) { this.y = window.innerHeight - this.height; this.vy *= -1; }
+
+                if (this.angle > 360) this.angle -= 360;
+                if (this.angle < -360) this.angle += 360;
+
+                this.updatePosition();
+            }
+
+            setState(stateName, duration = 2000) {
+                clearTimeout(this.stateTimeout);
+                this.el.classList.remove('state-sing', 'state-laugh', 'state-derp', 'state-angry');
+                if (stateName) this.el.classList.add(`state-${stateName}`);
+
+                if (duration > 0) {
+                    this.stateTimeout = setTimeout(() => {
+                        this.el.classList.remove('state-sing', 'state-laugh', 'state-derp', 'state-angry');
+                    }, duration);
+                }
+            }
+
+            laugh() {
+                this.setState('laugh', 1000);
+                playLaughSound();
+                
+                this.vx = (Math.random() - 0.5) * 15;
+                this.vy = (Math.random() - 0.5) * 15;
+
+                if (Math.random() > 0.5) this.say("ХА-ХА-ХА");
+            }
+
+            spin() {
+                this.el.style.transition = 'transform 0.5s ease-in-out';
+                this.el.style.transform = `rotate(${Math.random() * 720 + 360}deg) scale(1.2)`;
+                
+                setTimeout(() => {
+                    this.el.style.transform = 'rotate(0deg) scale(1)';
+                    setTimeout(() => this.el.style.transition = 'transform 0.2s', 500);
+                }, 500);
+                
+                this.vx *= 2;
+                this.vy *= 2;
+                playLaughSound();
+            }
+
+            say(text) {
+                this.bubble.textContent = text;
+                this.bubble.classList.add('show');
+                setTimeout(() => { this.bubble.classList.remove('show'); }, 2000);
+            }
+
+            sing(volume) {
+                if (this.isLaughing) return;
+                this.setState('sing', 300);
+                
+                const pupils = this.el.querySelectorAll('.pupil');
+                const move = volume * 5;
+                pupils.forEach(p => {
+                    p.style.transform = `translate(${(Math.random()-0.5)*move}px, ${(Math.random()-0.5)*move}px)`;
+                });
+            }
+
+            scare() {
+                this.setState('angry', 1500);
+                this.vx = (this.x > window.innerWidth/2 ? 1 : -1) * 20;
+                this.vy = (Math.random() - 0.5) * 20;
+                this.say("ААА!");
+            }
+
+            startRandomActions() {
+                const loop = () => {
+                    if (Math.random() > 0.6) {
+                        const actions = ['derp', 'angry', 'talk'];
+                        const action = actions[Math.floor(Math.random() * actions.length)];
+                        
+                        if (action === 'derp') this.setState('derp', 3000);
+                        if (action === 'angry') this.setState('angry', 2000);
+                        if (action === 'talk') {
+                            this.setState('sing', 1000);
+                            this.say(FUNNY_PHRASES[Math.floor(Math.random() * FUNNY_PHRASES.length)]);
+                        }
+                    }
+                    setTimeout(loop, Math.random() * 4000 + 2000);
+                };
+                setTimeout(loop, Math.random() * 3000);
+            }
+        }
+
+        for (let i = 0; i < NUM_BEANS; i++) {
+            beans.push(new Bean(i));
+        }
+
+        function gameLoop() {
+            beans.forEach(bean => bean.update());
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+
+
+        // === 2. АУДИО (МИКРОФОН И ХОР) ===
+        let audioContext;
+        let mediaStream;
+        let mediaRecorder;
+        let isRecording = false;
+        let chunks = [];
+        let analyser;
+        let isAnalyserRunning = false;
+        const micBtn = document.getElementById('mic-btn');
+
+        micBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    const source = audioContext.createMediaStreamSource(mediaStream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    isAnalyserRunning = true;
+                    checkVolume();
+
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+                    mediaRecorder.onstop = processAudioChunk;
+
+                    startRecordingLoop();
+                    isRecording = true;
+                    micBtn.textContent = '⏹ Микрофон ВКЛ';
+                    micBtn.classList.add('active');
+                } catch (err) {
+                    alert('Ошибка: Нет доступа к микрофону.');
+                }
+            } else {
+                isRecording = false;
+                isAnalyserRunning = false;
+                if(mediaRecorder.state === 'recording') mediaRecorder.stop();
+                mediaStream.getTracks().forEach(track => track.stop());
+                micBtn.textContent = '🎤 Включить Микрофон';
+                micBtn.classList.remove('active');
+            }
+        });
+
+        function checkVolume() {
+            if (!isAnalyserRunning) return;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            let volume = (sum / dataArray.length) / 255;
+
+            if (volume > 0.05) beans.forEach(bean => bean.sing(volume));
+            if (volume > 0.6 && Math.random() > 0.95) beans.forEach(bean => bean.scare());
+
+            requestAnimationFrame(checkVolume);
+        }
+
+        function startRecordingLoop() {
+            if (!isRecording) return;
+            chunks = [];
+            mediaRecorder.start();
+            setTimeout(() => {
+                if (isRecording && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    setTimeout(startRecordingLoop, 800);
+                }
+            }, 1500);
+        }
+
+        async function processAudioChunk() {
+            if (chunks.length === 0 || !audioContext) return;
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            try {
+                const arrayBuffer = await blob.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                if (isSilent(audioBuffer)) return;
+                playChorus(audioBuffer);
+            } catch (e) {}
+        }
+
+        function isSilent(audioBuffer) {
+            const data = audioBuffer.getChannelData(0);
+            let max = 0;
+            for (let i = 0; i < data.length; i++) {
+                if (Math.abs(data[i]) > max) max = Math.abs(data[i]);
+            }
+            return max < 0.08;
+        }
+
+        function playChorus(buffer) {
+            const voices = [1.1, 1.25, 1.4, 1.6];
+            const delays = [0, 0.04, 0.08, 0.15];
+            voices.forEach((rate, index) => {
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.playbackRate.value = rate;
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = 0.3;
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                source.start(audioContext.currentTime + delays[index]);
+            });
+        }
+
+        // === 3. ЗВУК СМЕХА ===
+        function playLaughSound() {
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') audioContext.resume();
+
+            const osc = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            osc.type = 'square';
+            
+            const now = audioContext.currentTime;
+            const pitch = 300 + Math.random() * 300;
+
+            for(let i=0; i<3; i++) {
+                osc.frequency.setValueAtTime(pitch, now + i*0.12);
+                osc.frequency.exponentialRampToValueAtTime(pitch/2, now + i*0.12 + 0.1);
+                gainNode.gain.setValueAtTime(0.15, now + i*0.12);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + i*0.12 + 0.1);
+            }
+
+            osc.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+    </script>
+</body>
+</html>
