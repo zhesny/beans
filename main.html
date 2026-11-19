@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Летающие Бобы-Хоровики</title>
+    <title>Бобы</title>
     <style>
         body {
             margin: 0;
@@ -176,19 +176,27 @@
             border-color: white transparent transparent transparent;
         }
         .speech-bubble.show { opacity: 1; transform: scale(1); }
+        
+        #status {
+            color: white;
+            font-size: 14px;
+            margin-top: 10px;
+            text-shadow: 1px 1px 2px black;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
 
     <div id="ui-container">
         <button id="mic-btn">🎤 Включить Микрофон</button>
+        <div id="status"></div>
     </div>
     <div id="floor"></div>
 
     <script>
         const NUM_BEANS = 7;
         const MAX_SPEED = 3; 
-        // ФРАЗА "Я ЛЮБЛЮ ТЕБЯ" УДАЛЕНА ОТСЮДА:
         const FUNNY_PHRASES = ["СОНЯ", "АААА", "БОБЫ!", "ХА-ХА", "ЛОЛ", "ПОМОГИТЕ", "ЧЕ?", "ЖЕСТЬ", "ОГО"];
 
         let beans = [];
@@ -231,7 +239,6 @@
                 this.angleSpeed = (Math.random() - 0.5) * 2;
 
                 this.stateTimeout = null;
-                this.isLaughing = false;
 
                 this.updatePosition();
 
@@ -289,22 +296,18 @@
             laugh() {
                 this.setState('laugh', 1000);
                 playLaughSound();
-                
                 this.vx = (Math.random() - 0.5) * 15;
                 this.vy = (Math.random() - 0.5) * 15;
-
                 if (Math.random() > 0.5) this.say("ХА-ХА-ХА");
             }
 
             spin() {
                 this.el.style.transition = 'transform 0.5s ease-in-out';
                 this.el.style.transform = `rotate(${Math.random() * 720 + 360}deg) scale(1.2)`;
-                
                 setTimeout(() => {
                     this.el.style.transform = 'rotate(0deg) scale(1)';
                     setTimeout(() => this.el.style.transition = 'transform 0.2s', 500);
                 }, 500);
-                
                 this.vx *= 2;
                 this.vy *= 2;
                 playLaughSound();
@@ -316,14 +319,14 @@
                 setTimeout(() => { this.bubble.classList.remove('show'); }, 2000);
             }
 
-            sing(volume) {
-                if (this.isLaughing) return;
-                this.setState('sing', 300);
+            // Визуал пения (когда бобы повторяют твой голос)
+            singVisual(duration) {
+                this.setState('sing', duration);
+                this.vy = (Math.random() - 0.5) * 10; // Подпрыгивают от усердия
                 
                 const pupils = this.el.querySelectorAll('.pupil');
-                const move = volume * 5;
                 pupils.forEach(p => {
-                    p.style.transform = `translate(${(Math.random()-0.5)*move}px, ${(Math.random()-0.5)*move}px)`;
+                    p.style.transform = `translate(${(Math.random()-0.5)*6}px, ${(Math.random()-0.5)*6}px)`;
                 });
             }
 
@@ -336,7 +339,7 @@
 
             startRandomActions() {
                 const loop = () => {
-                    if (Math.random() > 0.6) {
+                    if (Math.random() > 0.7) { // Реже, чтобы не мешали слушать
                         const actions = ['derp', 'angry', 'talk'];
                         const action = actions[Math.floor(Math.random() * actions.length)];
                         
@@ -347,7 +350,7 @@
                             this.say(FUNNY_PHRASES[Math.floor(Math.random() * FUNNY_PHRASES.length)]);
                         }
                     }
-                    setTimeout(loop, Math.random() * 4000 + 2000);
+                    setTimeout(loop, Math.random() * 5000 + 3000);
                 };
                 setTimeout(loop, Math.random() * 3000);
             }
@@ -364,52 +367,67 @@
         gameLoop();
 
 
-        // === 2. АУДИО (МИКРОФОН И ХОР) ===
+        // ==========================================
+        // === УМНАЯ ЗАПИСЬ И ЭФФЕКТ КРОЛИКА (VAD) ===
+        // ==========================================
+        
         let audioContext;
         let mediaStream;
         let mediaRecorder;
-        let isRecording = false;
-        let chunks = [];
+        let isRecordingEnabled = false;
+        let isPlayingBack = false; // Защита от записи самого себя
+        
         let analyser;
-        let isAnalyserRunning = false;
+        let chunks = [];
+        let silenceTimer = 0;
+        let isSpeaking = false;
+
         const micBtn = document.getElementById('mic-btn');
+        const statusText = document.getElementById('status');
 
         micBtn.addEventListener('click', async () => {
-            if (!isRecording) {
+            if (!isRecordingEnabled) {
                 try {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     
                     const source = audioContext.createMediaStreamSource(mediaStream);
                     analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256;
+                    analyser.fftSize = 512;
                     source.connect(analyser);
-                    isAnalyserRunning = true;
-                    checkVolume();
-
-                    mediaRecorder = new MediaRecorder(mediaStream);
-                    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-                    mediaRecorder.onstop = processAudioChunk;
-
-                    startRecordingLoop();
-                    isRecording = true;
+                    
+                    isRecordingEnabled = true;
                     micBtn.textContent = '⏹ Микрофон ВКЛ';
                     micBtn.classList.add('active');
+                    statusText.textContent = 'Говори! Как замолчишь — я повторю.';
+                    
+                    // Запускаем цикл проверки голоса
+                    checkVoiceActivity();
+
                 } catch (err) {
-                    alert('Ошибка: Нет доступа к микрофону.');
+                    alert('Ошибка: Нет доступа к микрофону. Разреши его в браузере!');
                 }
             } else {
-                isRecording = false;
-                isAnalyserRunning = false;
-                if(mediaRecorder.state === 'recording') mediaRecorder.stop();
-                mediaStream.getTracks().forEach(track => track.stop());
+                // Выключение
+                isRecordingEnabled = false;
+                isPlayingBack = false;
+                if(mediaStream) mediaStream.getTracks().forEach(track => track.stop());
                 micBtn.textContent = '🎤 Включить Микрофон';
                 micBtn.classList.remove('active');
+                statusText.textContent = 'Микрофон выключен.';
             }
         });
 
-        function checkVolume() {
-            if (!isAnalyserRunning) return;
+        // Детектор речи (VAD) - Слушает, когда ты говоришь, а когда замолкаешь
+        function checkVoiceActivity() {
+            if (!isRecordingEnabled) return;
+
+            // Если сейчас играет эхо, мы не слушаем микрофон, чтобы не было петли
+            if (isPlayingBack) {
+                requestAnimationFrame(checkVoiceActivity);
+                return;
+            }
+
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
             analyser.getByteFrequencyData(dataArray);
             
@@ -417,60 +435,121 @@
             for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
             let volume = (sum / dataArray.length) / 255;
 
-            if (volume > 0.05) beans.forEach(bean => bean.sing(volume));
-            if (volume > 0.6 && Math.random() > 0.95) beans.forEach(bean => bean.scare());
-
-            requestAnimationFrame(checkVolume);
-        }
-
-        function startRecordingLoop() {
-            if (!isRecording) return;
-            chunks = [];
-            mediaRecorder.start();
-            setTimeout(() => {
-                if (isRecording && mediaRecorder.state === 'recording') {
-                    mediaRecorder.stop();
-                    setTimeout(startRecordingLoop, 800);
+            // Порог громкости, при котором считаем, что человек говорит
+            const VOLUME_THRESHOLD = 0.03; 
+            
+            if (volume > VOLUME_THRESHOLD) {
+                // Человек говорит
+                silenceTimer = 0;
+                
+                if (!isSpeaking) {
+                    // Начал говорить - включаем запись
+                    isSpeaking = true;
+                    startRecording();
+                    statusText.textContent = 'Слушаю... 🎤';
                 }
-            }, 1500);
+            } else {
+                // Тишина
+                if (isSpeaking) {
+                    silenceTimer++;
+                    // Если тишина длится около 0.6 сек (примерно 40 кадров), останавливаем запись
+                    if (silenceTimer > 40) {
+                        isSpeaking = false;
+                        stopRecordingAndPlay();
+                        statusText.textContent = 'Жду фразу...';
+                    }
+                }
+            }
+
+            requestAnimationFrame(checkVoiceActivity);
         }
 
-        async function processAudioChunk() {
-            if (chunks.length === 0 || !audioContext) return;
+        function startRecording() {
+            chunks = [];
+            mediaRecorder = new MediaRecorder(mediaStream);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data);
+            };
+            mediaRecorder.onstop = processAndPlay;
+            mediaRecorder.start();
+        }
+
+        function stopRecordingAndPlay() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }
+
+        // Обработка записанного голоса и воспроизведение "хором кроликов"
+        async function processAndPlay() {
+            if (chunks.length === 0) return;
+            
             const blob = new Blob(chunks, { type: 'audio/webm' });
+            chunks = [];
+
             try {
                 const arrayBuffer = await blob.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                if (isSilent(audioBuffer)) return;
-                playChorus(audioBuffer);
-            } catch (e) {}
-        }
+                
+                // Проверяем, не слишком ли короткая запись (чтобы не повторять просто шум)
+                if (audioBuffer.duration < 0.2) return;
 
-        function isSilent(audioBuffer) {
-            const data = audioBuffer.getChannelData(0);
-            let max = 0;
-            for (let i = 0; i < data.length; i++) {
-                if (Math.abs(data[i]) > max) max = Math.abs(data[i]);
+                isPlayingBack = true;
+                statusText.textContent = 'ХОР БОБОВ! 🐰🔊';
+
+                // Заставляем всех бобов открыть рты (визуал)
+                beans.forEach(b => b.singVisual(audioBuffer.duration * 500)); // *500 из-за ускорения
+
+                // Воспроизводим писклявый хор
+                const totalDuration = playRabbitChorus(audioBuffer);
+
+                // Ждем, пока они не закончат петь, и снова начинаем слушать
+                setTimeout(() => {
+                    isPlayingBack = false;
+                    silenceTimer = 0;
+                    statusText.textContent = 'Говори! Как замолчишь — я повторю.';
+                }, totalDuration * 1000 + 300); // +300мс запаса
+
+            } catch (e) {
+                console.log("Ошибка аудио", e);
+                isPlayingBack = false;
             }
-            return max < 0.08;
         }
 
-        function playChorus(buffer) {
-            const voices = [1.1, 1.25, 1.4, 1.6];
-            const delays = [0, 0.04, 0.08, 0.15];
+        // Функция создания "Кроличьего Хора"
+        function playRabbitChorus(buffer) {
+            // Скорости воспроизведения (чем больше, тем выше голос)
+            // 1.4, 1.6 и 1.8 — это очень пискляво, как детские кролики
+            const voices = [1.4, 1.6, 1.8]; 
+            const delays = [0, 0.08, 0.15]; // Эхо-задержка между голосами
+            
+            let maxDuration = 0;
+
             voices.forEach((rate, index) => {
                 const source = audioContext.createBufferSource();
                 source.buffer = buffer;
-                source.playbackRate.value = rate;
+                source.playbackRate.value = rate; // Меняем высоту тона
+                
                 const gainNode = audioContext.createGain();
-                gainNode.gain.value = 0.3;
+                gainNode.gain.value = 0.4; // Немного тише, чтобы не резало слух
+                
                 source.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-                source.start(audioContext.currentTime + delays[index]);
+                
+                const startTime = audioContext.currentTime + delays[index];
+                source.start(startTime);
+                
+                // Вычисляем длительность этого голоса, чтобы потом вернуть микрофон
+                const thisDuration = buffer.duration / rate;
+                if (thisDuration + delays[index] > maxDuration) {
+                    maxDuration = thisDuration + delays[index];
+                }
             });
+            
+            return maxDuration;
         }
 
-        // === 3. ЗВУК СМЕХА ===
+        // === ЗВУК СМЕХА ПРИ КЛИКЕ ===
         function playLaughSound() {
             if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
             if (audioContext.state === 'suspended') audioContext.resume();
